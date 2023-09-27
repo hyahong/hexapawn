@@ -8,11 +8,21 @@
 #define PAWN_WHITE 0
 #define PAWN_BLACK 1
 
-#define PLAYER_FIRST 0
-#define AI_FIRST 1
+#define TURN_PLAYER 0
+#define TURN_AI 1
+
+#define PLY_DEPTH 3
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) > (b) ? (b) : (a))
+
+#define SET_POSITION(pos, a, b) \
+	do \
+	{ \
+		pos.row = a; \
+		pos.column = b; \
+	} \
+	while (0)
 
 /*
  * struct
@@ -39,8 +49,12 @@ char state[BOARD_ROW + 2][BOARD_COLUMN + 2];
 char next_state[BOARD_ROW + 2][BOARD_COLUMN + 2];
 /* pawn color */
 int player_pawn;
-/* first player */
-int first;
+/* player */
+int turn;
+
+/* trace */
+coordinate_t origin_position;
+coordinate_t moved_position;
 
 /*
  * interaction
@@ -86,7 +100,7 @@ void input_setting (void)
         scanf ("%s", answer);
     }
     while (strcmp (answer, "player") && strcmp (answer, "AI"));
-    first = strcmp (answer, "player") ? AI_FIRST : PLAYER_FIRST;
+    turn = strcmp (answer, "player") ? TURN_AI : TURN_PLAYER;
 }
 
 /*
@@ -132,7 +146,7 @@ int evaluate_state (void)
 /* this function will envelop the logic ordering by decreasing evaluate value */
 int hexapawn_alpha (int depth)
 {
-    coordinate_t remove[4] = { { 1, -1 }, { 1, 1 } };
+    coordinate_t remove[2] = { { 1, -1 }, { 1, 1 } };
     coordinate_t move[4] = { { 1, 0 }, { 0, 1 }, { 0, -1 }, { -1, 0 } };
     int evaluation_beta;
     int evaluation = -10000;
@@ -171,7 +185,12 @@ int hexapawn_alpha (int depth)
                         if (evaluation_beta > evaluation)
                         {
                             /* save current state as next state */
-                            memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
                             evaluation = evaluation_beta;
                         }
 
@@ -205,7 +224,12 @@ int hexapawn_alpha (int depth)
                         if (evaluation_beta > evaluation)
                         {
                             /* save current state as next state */
-                            memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
                             evaluation = evaluation_beta;
                         }
 
@@ -222,8 +246,9 @@ int hexapawn_alpha (int depth)
 
 int hexapawn_beta (int depth)
 {
-    coordinate_t remove[4] = { { -1, -1 }, { -1, 1 } };
+    coordinate_t remove[2] = { { -1, -1 }, { -1, 1 } };
     coordinate_t move[4] = { { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 } };
+    int evaluation_alpha;
     int evaluation = 10000;
     int value;
     int row, column;
@@ -256,7 +281,18 @@ int hexapawn_beta (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'B';
 
-                        evaluation = min (evaluation, hexapawn_beta (depth - 1));
+                        evaluation_alpha = hexapawn_alpha (depth - 1);
+                        if (evaluation_alpha < evaluation)
+                        {
+                            /* save current state as next state */
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
+                            evaluation = evaluation_alpha;
+                        }
 
                         state[i][j] = 'B';
                         state[row][column] = 'W';
@@ -284,7 +320,18 @@ int hexapawn_beta (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'B';
 
-                        evaluation = min (evaluation, hexapawn_beta (depth - 1));
+                        evaluation_alpha = hexapawn_alpha (depth - 1);
+                        if (evaluation_alpha < evaluation)
+                        {
+                            /* save current state as next state */
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
+                            evaluation = evaluation_alpha;
+                        }
 
                         state[i][j] = 'B';
                         state[row][column] = '.';
@@ -300,8 +347,99 @@ int hexapawn_beta (int depth)
 /*
  * entry
  */
+int coordinate_validation (coordinate_t *pawn, coordinate_t *new)
+{
+	coordinate_t white_remove[2] = { { 1, -1 }, { 1, 1 } };
+	coordinate_t black_remove[2] = { { -1, -1 }, { -1, 1 } };
+	coordinate_t (*remove)[2];
+    coordinate_t move[4] = { { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 } };
+	int row, column;
+	int p;
+
+	for (p = 0; p < 4; p++)
+	{
+		row = pawn->row + move[p].row;
+		column = pawn->column + move[p].column;
+		
+		if (row == new->row && column == new->column && state[row][column] == '.')
+			return 1;
+	}
+	remove = (player_pawn == PAWN_WHITE ? &white_remove : &black_remove);
+	for (p = 0; p < 2; p++)
+	{
+		row = pawn->row + (*remove)[p].row;
+		column = pawn->column + (*remove)[p].column;
+		
+		if (row == new->row && column == new->column &&
+				state[row][column] == (player_pawn == PAWN_WHITE ? 'B' : 'W'))
+			return 1;
+	}
+
+	return 0;
+}
+
+void handle_player (void)
+{
+	coordinate_t pawn;
+	coordinate_t new;
+	int wrong;
+
+	/* pawn selection */
+	wrong = 0;
+	do
+    {
+        printf ("\n");
+        if (wrong)
+            printf ("wrong input. ");
+        printf ("select the pawn you want to move. (row column)\n(%s) $> ",
+				player_pawn == PAWN_WHITE ? "white" : "black");
+        scanf ("%d %d", &pawn.row, &pawn.column);
+		wrong = 1;
+    }
+    while (!((pawn.row >= 1 && pawn.row <= BOARD_ROW) &&
+			(pawn.column >= 1 && pawn.column <= BOARD_COLUMN) &&
+			state[pawn.row][pawn.column] == (player_pawn == PAWN_WHITE ? 'W' : 'B')));
+
+	/* input coordinates to move */
+	wrong = 0;
+	do
+    {
+        printf ("\n");
+        if (wrong)
+            printf ("wrong input. ");
+        printf ("enter the coordinates where you want to move the pawn. (row column)\n(%s) $> ",
+				player_pawn == PAWN_WHITE ? "white" : "black");
+        scanf ("%d %d", &new.row, &new.column);
+		wrong = 1;
+    }
+    while (!((new.row >= 1 && new.row <= BOARD_ROW) &&
+			(new.column >= 1 && new.column <= BOARD_COLUMN) &&
+			coordinate_validation (&pawn, &new)));
+				
+	/* move */
+	printf ("(%s) $> move (%d, %d) -> (%d, %d)\n", player_pawn == PAWN_WHITE ? "white" : "black",
+			pawn.row, pawn.column, new.row, new.column);
+
+	state[pawn.row][pawn.column] = '.';
+	state[new.row][new.column] = (player_pawn == PAWN_WHITE ? 'W' : 'B');
+}
+
+void handle_AI (void)
+{
+	/* AI */
+	/* search the next move */
+	if (player_pawn == PAWN_WHITE)
+		hexapawn_beta (PLY_DEPTH);
+	else
+		hexapawn_alpha (PLY_DEPTH);
+
+	/* reflect search results */
+	memcpy (state, next_state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+}
+
 int main (void)
 {
+
     /* TODO: read the initial state of board */
     memset (state, 0, BOARD_ROW * BOARD_COLUMN);
     strcpy (&state[1][1], "WWW");
@@ -314,11 +452,23 @@ int main (void)
     input_setting ();
 
     /* in game */
-    //while (1)
+    while (1)
     {
-        printf ("%d\n", hexapawn_alpha (3));
-        memcpy (state, next_state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
-        print_state ();
+		printf ("\n");
+		print_state ();
+		printf ("%d\n", evaluate_state ());
+		/* player */
+		if (turn == TURN_PLAYER)
+		{
+			handle_player ();
+			turn = TURN_AI;
+		}
+		/* AI */
+		else
+		{
+			handle_AI ();
+			turn = TURN_PLAYER;
+		}
     }
     
 }
