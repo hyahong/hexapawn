@@ -2,6 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define C_BLACK "\033[0;30m"
+#define C_RED "\033[0;31m"
+#define C_YELLOW "\033[0;33m"
+#define C_WHITE "\033[0;37m"
+
+#define C_WHITE_BBLUE "\033[104;37m"
+
 #define BOARD_ROW 3
 #define BOARD_COLUMN 3
 
@@ -11,16 +18,29 @@
 #define TURN_PLAYER 0
 #define TURN_AI 1
 
+#define WIN_NONE 1
+#define WIN_DRAW 0
+#define WIN_WHITE -1
+#define WIN_BLACK -2
+
 #define PLY_DEPTH 3
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) > (b) ? (b) : (a))
 
+#define COMPARE_POSITION(pos, a, b) (pos.row == a && pos.column == b)
 #define SET_POSITION(pos, a, b) \
 	do \
 	{ \
 		pos.row = a; \
 		pos.column = b; \
+	} \
+	while (0)
+#define COPY_POSITION(pos, new) \
+	do \
+	{ \
+		pos.row = new.row; \
+		pos.column = new.column; \
 	} \
 	while (0)
 
@@ -56,18 +76,28 @@ int turn;
 coordinate_t origin_position;
 coordinate_t moved_position;
 
+coordinate_t selected_pawn = { -1, -1 };
+
 /*
  * interaction
  */
 void print_state (void)
 {
+	char *color;
     int i, j;
 
-    for (i = 0; i < BOARD_ROW + 2; i++)
+    for (i = 1; i < BOARD_ROW + 1; i++)
     {
-        for (j = 0; j < BOARD_COLUMN + 2; j++)
+        printf ("  ");
+        for (j = 1; j < BOARD_COLUMN + 1; j++)
         {
-            printf ("%c", state[i][j] ? state[i][j] : '*');
+			color = C_WHITE;
+			if (COMPARE_POSITION (selected_pawn, i, j))
+				color = C_RED;
+			if (COMPARE_POSITION (moved_position, i, j) || COMPARE_POSITION (origin_position, i, j))
+				color = C_WHITE_BBLUE;
+			printf ("%s", color);
+			printf ("%c" C_WHITE, state[i][j] ? state[i][j] : '*');
         }
         printf ("\n");
     }
@@ -106,6 +136,59 @@ void input_setting (void)
 /*
  * AI-algorithm
  */
+int winner (void)
+{
+	int white_win, black_win;
+	int white, black;
+	int i, j;
+
+	white_win = 0;
+	black_win = 0;
+	for (i = 1; i < BOARD_COLUMN + 1; i++)
+	{
+		if (state[1][i] == 'B')
+		{
+			black_win = 1;
+		}
+	}
+	for (i = 1; i < BOARD_COLUMN + 1; i++)
+	{
+		if (state[3][i] == 'W')
+		{
+			white_win = 1;
+		}
+	}
+	if (white_win && black_win)
+		return WIN_DRAW;
+	else if (white_win)
+		return WIN_WHITE;
+	else if (black_win)
+		return WIN_BLACK;
+
+	white = 0;
+	black = 0;
+	for (i = 1; i < BOARD_ROW + 1; i++)
+	{
+		for (j = 1; j < BOARD_COLUMN + 1; j++)
+		{
+			if (state[i][j] == 'W')
+				white++;
+			if (state[i][j] == 'B')
+				black++;
+		}
+	}
+	if (white == 0 && black == 0)
+		return WIN_DRAW;
+	/* black win */
+	if (white == 0)
+		return WIN_BLACK;
+	/* black win */
+	if (black == 0)
+		return WIN_WHITE;
+
+	return WIN_NONE;
+}
+
 int evaluate_state (void)
 {
     int value;
@@ -388,6 +471,7 @@ void handle_player (void)
 	wrong = 0;
 	do
     {
+		scanf("%*[^\n]");
         printf ("\n");
         if (wrong)
             printf ("wrong input. ");
@@ -399,11 +483,18 @@ void handle_player (void)
     while (!((pawn.row >= 1 && pawn.row <= BOARD_ROW) &&
 			(pawn.column >= 1 && pawn.column <= BOARD_COLUMN) &&
 			state[pawn.row][pawn.column] == (player_pawn == PAWN_WHITE ? 'W' : 'B')));
+	
+	COPY_POSITION (selected_pawn, pawn);
+
+	system ("clear");
+	printf ("%s TURN (evaluation: %d)\n\n", turn == TURN_PLAYER ? "PLAYER" : "AI", evaluate_state ());
+	print_state ();
 
 	/* input coordinates to move */
 	wrong = 0;
 	do
     {
+		scanf("%*[^\n]");
         printf ("\n");
         if (wrong)
             printf ("wrong input. ");
@@ -416,6 +507,10 @@ void handle_player (void)
 			(new.column >= 1 && new.column <= BOARD_COLUMN) &&
 			coordinate_validation (&pawn, &new)));
 				
+	SET_POSITION (selected_pawn, -1, -1);
+	COPY_POSITION (origin_position, pawn);
+	COPY_POSITION (moved_position, new);
+
 	/* move */
 	printf ("(%s) $> move (%d, %d) -> (%d, %d)\n", player_pawn == PAWN_WHITE ? "white" : "black",
 			pawn.row, pawn.column, new.row, new.column);
@@ -433,12 +528,16 @@ void handle_AI (void)
 	else
 		hexapawn_alpha (PLY_DEPTH);
 
+	printf ("(%s) $> move (%d, %d) -> (%d, %d)\n", player_pawn == PAWN_WHITE ? "black" : "white",
+			origin_position.row, origin_position.column, moved_position.row, moved_position.column);
+
 	/* reflect search results */
 	memcpy (state, next_state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
 }
 
 int main (void)
 {
+	int win;
 
     /* TODO: read the initial state of board */
     memset (state, 0, BOARD_ROW * BOARD_COLUMN);
@@ -446,29 +545,47 @@ int main (void)
     strcpy (&state[2][1], "...");
     strcpy (&state[3][1], "BBB");
 
+	system ("clear");
+	printf ("CURRENT STATE (evaluation: %d)\n\n", evaluate_state ());
     /* display the initial state */
     print_state ();
     /* get a information about player */
     input_setting ();
 
+	system ("clear");
     /* in game */
-    while (1)
+    while ((win = winner ()) == WIN_NONE)
     {
-		printf ("\n");
+		printf ("%s TURN (evaluation: %d)\n\n", turn == TURN_PLAYER ? "PLAYER" : "AI", evaluate_state ());
 		print_state ();
-		printf ("%d\n", evaluate_state ());
+
 		/* player */
 		if (turn == TURN_PLAYER)
 		{
 			handle_player ();
 			turn = TURN_AI;
+
+			system ("clear");
 		}
 		/* AI */
 		else
 		{
+			printf ("\n");
 			handle_AI ();
 			turn = TURN_PLAYER;
+			printf ("\n\n");
 		}
     }
-    
+	
+	if (win == WIN_DRAW)
+		printf ("DRAW! ");
+	else
+		printf ("%s (%s) WIN! ",
+				(win == WIN_WHITE ?
+				 (player_pawn == PAWN_WHITE ? "player" : "AI") :
+				 (player_pawn == PAWN_WHITE ? "AI" : "player")),
+				win == WIN_WHITE ? "white" : "black");
+	printf ("(evaluation: %d)\n\n", evaluate_state ());
+	print_state ();
+	printf ("\n");
 }
