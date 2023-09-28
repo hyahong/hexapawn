@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* whether to use pruning */
+#define USE_PRUNING
+
+#define PLY_DEPTH 3
+
 #define C_BLACK "\033[0;30m"
 #define C_RED "\033[0;31m"
 #define C_YELLOW "\033[0;33m"
@@ -22,8 +27,6 @@
 #define WIN_DRAW 0
 #define WIN_WHITE -1
 #define WIN_BLACK -2
-
-#define PLY_DEPTH 3
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) > (b) ? (b) : (a))
@@ -57,8 +60,8 @@ struct coordinate
 /*
  * prototype
  */
-int hexapawn_alpha (int depth);
-int hexapawn_beta (int depth);
+int hexapawn_alpha (int depth, int alpha, int beta);
+int hexapawn_beta (int depth, int alpha, int beta);
 
 /*
  * global
@@ -77,6 +80,15 @@ coordinate_t origin_position;
 coordinate_t moved_position;
 
 coordinate_t selected_pawn = { -1, -1 };
+
+/* debug */
+/* function call count */
+static int debug_alpha = 0;
+static int debug_beta = 0;
+
+#define DEBUG_CALL_INIT() (debug_alpha = debug_beta = 0)
+#define DEBUG_ALPHA_CALL() (debug_alpha++);
+#define DEBUG_BETA_CALL() (debug_beta++);
 
 /*
  * interaction
@@ -225,9 +237,9 @@ int evaluate_state (void)
     return value;
 }
 
-/* alpha beta puruning */
+/* alpha beta pruning */
 /* this function will envelop the logic ordering by decreasing evaluate value */
-int hexapawn_alpha (int depth)
+int hexapawn_alpha (int depth, int alpha, int beta)
 {
     coordinate_t remove[2] = { { 1, -1 }, { 1, 1 } };
     coordinate_t move[4] = { { 1, 0 }, { 0, 1 }, { 0, -1 }, { -1, 0 } };
@@ -237,6 +249,8 @@ int hexapawn_alpha (int depth)
     int row, column;
     int i, j;
     int p;
+
+	DEBUG_ALPHA_CALL ();
 
     value = evaluate_state ();
     /* the evaluation value is returned below situation */
@@ -264,7 +278,7 @@ int hexapawn_alpha (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'W';
 
-                        evaluation_beta = hexapawn_beta (depth - 1);
+                        evaluation_beta = hexapawn_beta (depth - 1, alpha, beta);
                         if (evaluation_beta > evaluation)
                         {
                             /* save current state as next state */
@@ -279,6 +293,12 @@ int hexapawn_alpha (int depth)
 
                         state[i][j] = 'W';
                         state[row][column] = 'B';
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation >= beta)
+							return evaluation;
+						alpha = max (alpha, evaluation);
+#endif
                     }
                 }
             }
@@ -303,7 +323,7 @@ int hexapawn_alpha (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'W';
 
-                        evaluation_beta = hexapawn_beta (depth - 1);
+                        evaluation_beta = hexapawn_beta (depth - 1, alpha, beta);
                         if (evaluation_beta > evaluation)
                         {
                             /* save current state as next state */
@@ -318,6 +338,13 @@ int hexapawn_alpha (int depth)
 
                         state[i][j] = 'W';
                         state[row][column] = '.';
+
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation >= beta)
+							return evaluation;
+						alpha = max (alpha, evaluation);
+#endif
                     }
                 } 
             }
@@ -327,7 +354,7 @@ int hexapawn_alpha (int depth)
     return evaluation;
 }
 
-int hexapawn_beta (int depth)
+int hexapawn_beta (int depth, int alpha, int beta)
 {
     coordinate_t remove[2] = { { -1, -1 }, { -1, 1 } };
     coordinate_t move[4] = { { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 } };
@@ -337,6 +364,8 @@ int hexapawn_beta (int depth)
     int row, column;
     int i, j;
     int p;
+
+	DEBUG_BETA_CALL ();
 
     value = evaluate_state ();
     /* the evaluation value is returned below situation */
@@ -364,7 +393,7 @@ int hexapawn_beta (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'B';
 
-                        evaluation_alpha = hexapawn_alpha (depth - 1);
+                        evaluation_alpha = hexapawn_alpha (depth - 1, alpha, beta);
                         if (evaluation_alpha < evaluation)
                         {
                             /* save current state as next state */
@@ -379,6 +408,13 @@ int hexapawn_beta (int depth)
 
                         state[i][j] = 'B';
                         state[row][column] = 'W';
+
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation <= alpha)
+							return evaluation;
+						beta = min (beta, evaluation);
+#endif
                     }
                 }
             }
@@ -403,7 +439,7 @@ int hexapawn_beta (int depth)
                         state[i][j] = '.';
                         state[row][column] = 'B';
 
-                        evaluation_alpha = hexapawn_alpha (depth - 1);
+                        evaluation_alpha = hexapawn_alpha (depth - 1, alpha, beta);
                         if (evaluation_alpha < evaluation)
                         {
                             /* save current state as next state */
@@ -418,6 +454,13 @@ int hexapawn_beta (int depth)
 
                         state[i][j] = 'B';
                         state[row][column] = '.';
+
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation <= alpha)
+							return evaluation;
+						beta = min (beta, evaluation);
+#endif
                     }
                 } 
             }
@@ -521,15 +564,21 @@ void handle_player (void)
 
 void handle_AI (void)
 {
+	int evaluation;
+
+	DEBUG_CALL_INIT ();
+
 	/* AI */
 	/* search the next move */
 	if (player_pawn == PAWN_WHITE)
-		hexapawn_beta (PLY_DEPTH);
+		evaluation = hexapawn_beta (PLY_DEPTH, -10000, 10000);
 	else
-		hexapawn_alpha (PLY_DEPTH);
+		evaluation = hexapawn_alpha (PLY_DEPTH, -10000, 10000);
 
 	printf ("(%s) $> move (%d, %d) -> (%d, %d)\n", player_pawn == PAWN_WHITE ? "black" : "white",
 			origin_position.row, origin_position.column, moved_position.row, moved_position.column);
+	printf ("alpha: %d beta: %d total: %d\nsearch evaluation: %d\n",
+			debug_alpha, debug_beta, debug_alpha + debug_beta, evaluation);
 
 	/* reflect search results */
 	memcpy (state, next_state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
