@@ -3,7 +3,7 @@
 #include <string.h>
 
 /* whether to use pruning */
-//#define USE_PRUNING
+#define USE_PRUNING
 
 #define PLY_DEPTH 3
 
@@ -199,8 +199,8 @@ int evaluate_state (void)
 /* this function will envelop the logic ordering by decreasing evaluate value */
 int hexapawn_alpha (int depth, int alpha, int beta)
 {
-    coordinate_t remove[2] = { { 1, -1 }, { 1, 1 } };
     coordinate_t move[4] = { { 1, 0 }, { 0, 1 }, { 0, -1 }, { -1, 0 } };
+    coordinate_t remove[2] = { { 1, -1 }, { 1, 1 } };
     int evaluation_beta;
     int evaluation = -10000;
     int value;
@@ -216,52 +216,6 @@ int hexapawn_alpha (int depth, int alpha, int beta)
     /* 2. game is end in this state */
     if (!depth || value == -100 || value == 100)
         return value;
-
-    /* search all possibilities for W to catch the enemy pawn */
-    /* this action make evaluation value better than just moving the pawn */
-    for (i = 1; i < BOARD_ROW + 1; i++)
-    {
-        for (j = 1; j < BOARD_COLUMN + 1; j++)
-        {
-            if (state[i][j] == 'W')
-            {
-                for (p = 0; p < 2; p++)
-                {
-                    row = i + remove[p].row;
-                    column = j + remove[p].column;
-
-                    if (state[row][column] == 'B')
-                    {
-                        //printf ("%d %d k\n", row, column);
-                        state[i][j] = '.';
-                        state[row][column] = 'W';
-
-                        evaluation_beta = hexapawn_beta (depth - 1, alpha, beta);
-                        if (evaluation_beta > evaluation)
-                        {
-                            /* save current state as next state */
-							if (depth == PLY_DEPTH)
-							{
-								SET_POSITION (origin_position, i, j);
-								SET_POSITION (moved_position, row, column);
-								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
-							}
-                            evaluation = evaluation_beta;
-                        }
-
-                        state[i][j] = 'W';
-                        state[row][column] = 'B';
-#ifdef USE_PRUNING
-						/* pruning */
-						if (evaluation >= beta)
-							return evaluation;
-						alpha = max (alpha, evaluation);
-#endif
-                    }
-                }
-            }
-        }
-    }
 
     /* search all possibilities for W to move */
     for (i = 1; i < BOARD_ROW + 1; i++)
@@ -309,13 +263,58 @@ int hexapawn_alpha (int depth, int alpha, int beta)
         }
     }
 
+    /* search all possibilities for W to catch the enemy pawn */
+    /* this action make evaluation value better than just moving the pawn */
+    for (i = 1; i < BOARD_ROW + 1; i++)
+    {
+        for (j = 1; j < BOARD_COLUMN + 1; j++)
+        {
+            if (state[i][j] == 'W')
+            {
+                for (p = 0; p < 2; p++)
+                {
+                    row = i + remove[p].row;
+                    column = j + remove[p].column;
+
+                    if (state[row][column] == 'B')
+                    {
+                        state[i][j] = '.';
+                        state[row][column] = 'W';
+
+                        evaluation_beta = hexapawn_beta (depth - 1, alpha, beta);
+                        if (evaluation_beta > evaluation)
+                        {
+                            /* save current state as next state */
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
+                            evaluation = evaluation_beta;
+                        }
+
+                        state[i][j] = 'W';
+                        state[row][column] = 'B';
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation >= beta)
+							return evaluation;
+						alpha = max (alpha, evaluation);
+#endif
+                    }
+                }
+            }
+        }
+    }
+
     return evaluation;
 }
 
 int hexapawn_beta (int depth, int alpha, int beta)
 {
-    coordinate_t remove[2] = { { -1, -1 }, { -1, 1 } };
     coordinate_t move[4] = { { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 } };
+    coordinate_t remove[2] = { { -1, -1 }, { -1, 1 } };
     int evaluation_alpha;
     int evaluation = 10000;
     int value;
@@ -331,6 +330,51 @@ int hexapawn_beta (int depth, int alpha, int beta)
     /* 2. game is end in this state */
     if (!depth || value == -100 || value == 100)
         return value;
+
+	/* search all possibilities for W to move */
+    for (i = 1; i < BOARD_ROW + 1; i++)
+    {
+        for (j = 1; j < BOARD_COLUMN + 1; j++)
+        {
+            if (state[i][j] == 'B')
+            {
+                for (p = 0; p < 4; p++)
+                {
+                    row = i + move[p].row;
+                    column = j + move[p].column;
+                    
+                    if (state[row][column] == '.')
+                    {
+                        state[i][j] = '.';
+                        state[row][column] = 'B';
+
+                        evaluation_alpha = hexapawn_alpha (depth - 1, alpha, beta);
+                        if (evaluation_alpha < evaluation)
+                        {
+                            /* save current state as next state */
+							if (depth == PLY_DEPTH)
+							{
+								SET_POSITION (origin_position, i, j);
+								SET_POSITION (moved_position, row, column);
+								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
+							}
+                            evaluation = evaluation_alpha;
+                        }
+
+                        state[i][j] = 'B';
+                        state[row][column] = '.';
+
+#ifdef USE_PRUNING
+						/* pruning */
+						if (evaluation <= alpha)
+							return evaluation;
+						beta = min (beta, evaluation);
+#endif
+                    }
+                } 
+            }
+        }
+    }
 
     /* search all possibilities for W to catch the enemy pawn */
     /* this action make evaluation value better than just moving the pawn */
@@ -378,53 +422,7 @@ int hexapawn_beta (int depth, int alpha, int beta)
             }
         }
     }
-
-    /* search all possibilities for W to move */
-    for (i = 1; i < BOARD_ROW + 1; i++)
-    {
-        for (j = 1; j < BOARD_COLUMN + 1; j++)
-        {
-            if (state[i][j] == 'B')
-            {
-                for (p = 0; p < 4; p++)
-                {
-                    row = i + move[p].row;
-                    column = j + move[p].column;
-                    
-                    if (state[row][column] == '.')
-                    {
-                        //printf ("%d %d\n", row, column);
-                        state[i][j] = '.';
-                        state[row][column] = 'B';
-
-                        evaluation_alpha = hexapawn_alpha (depth - 1, alpha, beta);
-                        if (evaluation_alpha < evaluation)
-                        {
-                            /* save current state as next state */
-							if (depth == PLY_DEPTH)
-							{
-								SET_POSITION (origin_position, i, j);
-								SET_POSITION (moved_position, row, column);
-								memcpy (next_state, state, (BOARD_ROW + 2) * (BOARD_COLUMN + 2));
-							}
-                            evaluation = evaluation_alpha;
-                        }
-
-                        state[i][j] = 'B';
-                        state[row][column] = '.';
-
-#ifdef USE_PRUNING
-						/* pruning */
-						if (evaluation <= alpha)
-							return evaluation;
-						beta = min (beta, evaluation);
-#endif
-                    }
-                } 
-            }
-        }
-    }
-
+ 
     return evaluation;
 }
 
