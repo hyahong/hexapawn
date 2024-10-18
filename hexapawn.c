@@ -5,7 +5,7 @@
 /* whether to use pruning */
 #define USE_PRUNING
 
-#define PLY_DEPTH 3
+#define PLY_DEPTH 8
 
 /* palette */
 #define C_BLACK "\033[0;30m"
@@ -18,8 +18,15 @@
 #define C_WHITE_BBLUE "\033[104;37m"
 
 /* board size */
-#define BOARD_ROW 3
-#define BOARD_COLUMN 3
+#define BOARD_ROW 5
+#define BOARD_COLUMN 5
+#define BOARD_DAFAULT (char *[]) { \
+	"WWWWW", \
+	".....", \
+	".....", \
+	".....", \
+	"BBBBB"  \
+}
 
 /* pieces tpye */
 #define PAWN_WHITE 0
@@ -125,7 +132,7 @@ int winner (void)
 	}
 	for (i = 1; i < BOARD_COLUMN + 1; i++)
 	{
-		if (state[3][i] == 'W')
+		if (state[BOARD_ROW][i] == 'W')
 		{
 			white_win = 1;
 		}
@@ -547,53 +554,6 @@ void print_state (void)
 }
 
 /*
- * input_state () - read the state file
- */
-void input_state (void)
-{
-#define NUMERIC_STATE_COLOR(x) ((x) ? ((x) == 1 ? 'W' : 'B') : '.')
-
-    char answer[128] = { 0, };
-	FILE *stream;
-	int c[3];
-	int i;
-
-    /* input a state file */
-    do
-    {
-        printf ("\n");
-        if (answer[0])
-            printf ("wrong input. ");
-        printf ("input the file name. (default: 0)\n$> ");
-        scanf ("%s", answer);
-
-		/* default */
-		if (!strcmp (answer, "0"))
-			return ;
-
-		stream = fopen (answer, "r");
-		/* is this file valid ? */
-		if (stream)
-			break;
-    }
-    while (1);
-	
-	for (i = 1; i <= 3; i++)
-	{
-		/* convert */
-		fscanf (stream, "%d %d %d", &c[0], &c[1], &c[2]);
-		state[i][1] = NUMERIC_STATE_COLOR (c[0]);
-		state[i][2] = NUMERIC_STATE_COLOR (c[1]);
-		state[i][3] = NUMERIC_STATE_COLOR (c[2]);
-	}
-
-	/* close stream */
-	fclose (stream);
-
-#undef NUMERIC_STATE_COLOR
-}
-
-/*
  * input_setting () - enter game setting
  */
 void input_setting (void)
@@ -780,15 +740,12 @@ void handle_AI (void)
 int main (void)
 {
 	int win;
+	int i;
 
 	/* initial state */
     memset (state, 0, BOARD_ROW * BOARD_COLUMN);
-    strcpy (&state[1][1], "WWW");
-    strcpy (&state[2][1], "...");
-    strcpy (&state[3][1], "BBB");
-
-	/* input state */
-	input_state ();
+	for (i = 0; i < BOARD_ROW; i++)
+		strcpy (&state[i + 1][1], BOARD_DAFAULT[i]);
 
 	system ("clear");
 	print_header (0);
